@@ -1,0 +1,29 @@
+# Ignore cabal build artifacts
+dist-newstyle/
+dist/
+cabal.sandbox.config
+cabal.sandbox.config.lock
+*.buildinfo
+*.cabal~
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+*.prof
+*.aux
+*.hp
+*.eventlog
+
+# Ignore Haskell IDE files
+.ghc.environment.*
+.ghci_history
+.ghc/
+.tags
+.tags2
+.hoogle/
+
+# Ignore temporary files
+*.swp
+*.bak
+*.tmp
+*.log
