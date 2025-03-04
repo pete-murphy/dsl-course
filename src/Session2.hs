@@ -62,12 +62,78 @@ example = Let "x" (Add (LInt 3) (LInt 7)) (IfThenElse (Leq (Var "x") (LInt 11)) 
 --  C ::= [_]    -- hole
 --     |  C + e
 --     |  i + C
+--     |  C <= e
+--     |  i <= e
+--     |  if C then e1 else e2
+--     |  if b then C else e
+--     |  if b then e else C
+--     |  let n = C in e
 
 data Stack
   = Top
   | Add1 Stack Expr
   | Add2 Int Stack
+  | Leq1 Stack Expr
+  | Leq2 Int Stack
+  | IfThenElse1 Stack Expr Expr
+  | IfThenElse2 Bool Stack Expr
+  | IfThenElse3 Bool Val Stack
+  | Let1 Name Stack Expr
   deriving stock (Show)
+
+forward :: Stack -> Expr -> Map Name Val -> Val
+forward stack (LInt i) env = backward stack (VInt i) env
+forward stack (LBool b) env = backward stack (VBool b) env
+forward stack (Add e1 e2) env = forward (Add1 stack e2) e1 env
+forward stack (Leq e1 e2) env = forward (Leq1 stack e2) e1 env
+forward stack (IfThenElse e1 e2 e3) env = forward (IfThenElse1 stack e2 e3) e1 env
+forward stack (Var name) env = backward stack (env Map.! name) env
+forward stack (Let name e1 e2) env = forward (Let1 name stack e2) e1 env
+
+backward :: Stack -> Val -> Map Name Val -> Val
+backward Top i _ = i
+backward (Add1 stack e) v env = forward (add1 v stack) e env
+backward (Add2 i stack) v env = backward stack (add2 i v) env
+backward (Leq1 stack e) v env = forward (leq1 v stack) e env
+backward (Leq2 i stack) v env = backward stack (leq2 i v) env
+backward (IfThenElse1 stack e1 e2) v env = forward (ifThenElse1 v stack e2) e1 env
+backward (IfThenElse2 b stack e) v env = forward (IfThenElse3 b v stack) e env
+backward (IfThenElse3 b v1 stack) v2 env = backward stack (if b then v1 else v2) env
+backward (Let1 name stack e) v env = forward stack e (Map.insert name v env)
+
+add1 :: Val -> Stack -> Stack
+add1 (VInt i) stack = Add2 i stack
+add1 _ _ = error "type error"
+
+add2 :: Int -> Val -> Val
+add2 i1 (VInt i2) = VInt (i1 + i2)
+add2 _ _ = error "type error"
+
+leq1 :: Val -> Stack -> Stack
+leq1 (VInt i) stack = Leq2 i stack
+leq1 _ _ = error "type error"
+
+leq2 :: Int -> Val -> Val
+leq2 i1 (VInt i2) = VBool (i1 <= i2)
+leq2 _ _ = error "type error"
+
+ifThenElse1 :: Val -> Stack -> Expr -> Stack
+ifThenElse1 (VBool b) stack e = IfThenElse2 b stack e
+ifThenElse1 _ _ _ = error "type error"
+
+example2 :: Expr
+example2 =
+  Let
+    "x"
+    (LInt 3)
+    ( IfThenElse
+        (Leq (Add (LInt 4) (LInt 3)) (LInt 4))
+        (LInt 1)
+        (Var "x")
+    )
+
+-- >>> forward Top example2 Map.empty
+-- VInt 3
 
 {-
 forward :: Stack -> Expr -> Int
