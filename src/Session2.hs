@@ -78,8 +78,6 @@ data Stack
   | Leq1 Stack Expr Env
   | Leq2 Int Stack
   | IfThenElse1 Stack Expr Expr Env
-  | IfThenElse2 Bool Stack Expr Env
-  | IfThenElse3 Bool Val Stack
   | Let1 Name Stack Expr Env
   deriving stock (Show)
 
@@ -98,9 +96,7 @@ backward (Add1 stack e env) v = forward (add1 v stack) e env
 backward (Add2 i stack) v = backward stack (add2 i v)
 backward (Leq1 stack e env) v = forward (leq1 v stack) e env
 backward (Leq2 i stack) v = backward stack (leq2 i v)
-backward (IfThenElse1 stack e1 e2 env) v = forward (ifThenElse1 v stack e2 env) e1 env
-backward (IfThenElse2 b stack e env) v = forward (IfThenElse3 b v stack) e env
-backward (IfThenElse3 b v1 stack) v2 = backward stack (if b then v1 else v2)
+backward (IfThenElse1 stack e2 e3 env) v = forward stack (ifThenElse v e2 e3) env
 backward (Let1 name stack e env) v = forward stack e (Map.insert name v env)
 
 add1 :: Val -> Stack -> Stack
@@ -118,10 +114,6 @@ leq1 _ _ = error "type error"
 leq2 :: Int -> Val -> Val
 leq2 i1 (VInt i2) = VBool (i1 <= i2)
 leq2 _ _ = error "type error"
-
-ifThenElse1 :: Val -> Stack -> Expr -> Env -> Stack
-ifThenElse1 (VBool b) stack e env = IfThenElse2 b stack e env
-ifThenElse1 _ _ _ _ = error "type error"
 
 example2 :: Expr
 example2 =
