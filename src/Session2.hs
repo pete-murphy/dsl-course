@@ -65,8 +65,6 @@ example = Let "x" (Add (LInt 3) (LInt 7)) (IfThenElse (Leq (Var "x") (LInt 11)) 
 --     |  C <= e
 --     |  i <= e
 --     |  if C then e1 else e2
---     |  if b then C else e
---     |  if b then e else C
 --     |  let n = C in e
 
 type Env = Map Name Val
@@ -74,13 +72,14 @@ type Env = Map Name Val
 data Stack
   = Top
   | Add1 Stack Expr Env
-  | Add2 Int Stack
+  | Add2 Val Stack
   | Leq1 Stack Expr Env
-  | Leq2 Int Stack
+  | Leq2 Val Stack
   | IfThenElse1 Stack Expr Expr Env
   | Let1 Name Stack Expr Env
   deriving stock (Show)
 
+-- "forward" is for evaluating expressions into values
 forward :: Stack -> Expr -> Env -> Val
 forward stack (LInt i) _ = backward stack (VInt i)
 forward stack (LBool b) _ = backward stack (VBool b)
@@ -90,30 +89,15 @@ forward stack (IfThenElse e1 e2 e3) env = forward (IfThenElse1 stack e2 e3 env) 
 forward stack (Var name) env = backward stack (env Map.! name)
 forward stack (Let name e1 e2) env = forward (Let1 name stack e2 env) e1 env
 
+-- call "backward" when you have produced a value, consult the stack to see what to do with it
 backward :: Stack -> Val -> Val
-backward Top i = i
-backward (Add1 stack e env) v = forward (add1 v stack) e env
-backward (Add2 i stack) v = backward stack (add2 i v)
-backward (Leq1 stack e env) v = forward (leq1 v stack) e env
-backward (Leq2 i stack) v = backward stack (leq2 i v)
-backward (IfThenElse1 stack e2 e3 env) v = forward stack (ifThenElse v e2 e3) env
-backward (Let1 name stack e env) v = forward stack e (Map.insert name v env)
-
-add1 :: Val -> Stack -> Stack
-add1 (VInt i) stack = Add2 i stack
-add1 _ _ = error "type error"
-
-add2 :: Int -> Val -> Val
-add2 i1 (VInt i2) = VInt (i1 + i2)
-add2 _ _ = error "type error"
-
-leq1 :: Val -> Stack -> Stack
-leq1 (VInt i) stack = Leq2 i stack
-leq1 _ _ = error "type error"
-
-leq2 :: Int -> Val -> Val
-leq2 i1 (VInt i2) = VBool (i1 <= i2)
-leq2 _ _ = error "type error"
+backward Top v = v
+backward (Add1 stack e2 env) v1 = forward (Add2 v1 stack) e2 env
+backward (Add2 v1 stack) v2 = backward stack (add v1 v2)
+backward (Leq1 stack e2 env) v1 = forward (Leq2 v1 stack) e2 env
+backward (Leq2 v1 stack) v2 = backward stack (leq v1 v2)
+backward (IfThenElse1 stack e2 e3 env) v1 = forward stack (ifThenElse v1 e2 e3) env
+backward (Let1 name stack e2 env) v1 = forward stack e2 (Map.insert name v1 env)
 
 example2 :: Expr
 example2 =
