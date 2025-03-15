@@ -20,6 +20,7 @@ library
     exposed-modules:
        Session1
        Session2
+       Session3
     -- other-modules:
     -- other-extensions:
     build-depends:
