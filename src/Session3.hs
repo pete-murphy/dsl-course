@@ -17,6 +17,7 @@ data Expr
   | IfThenElse Expr Expr Expr
   | Var Name
   | Let Name Expr Expr
+  | Catch Expr Expr
   deriving stock (Show)
 
 type Name = Text
@@ -34,6 +35,7 @@ eval (Leq e1 e2) env = eval e1 env `leq'` eval e2 env
 eval (IfThenElse e1 e2 e3) env = eval (ifThenElse' (eval e1 env) e2 e3) env
 eval (Var x) env = env Map.! x
 eval (Let x e1 e2) env = eval e2 (Map.insert x (eval e1 env) env)
+eval (Catch _ e) env = eval e env
 
 add' :: Val -> Val -> Val
 add' (VInt i1) (VInt i2) = VInt (i1 + i2)
@@ -72,6 +74,7 @@ type Env = Map Name Val
 data Error
   = ScopeError Name
   | TypeError
+  deriving stock (Show)
 
 data Stack
   = Top
@@ -81,6 +84,7 @@ data Stack
   | Leq2 Val Stack
   | IfThenElse1 Stack Expr Expr Env
   | Let1 Name Stack Expr Env
+  | Catch1 Stack Expr Env
   deriving stock (Show)
 
 note :: forall a. Error -> Maybe a -> Either Error a
@@ -94,18 +98,42 @@ forward stack (LBool b) _ = backward stack (VBool b)
 forward stack (Add e1 e2) env = forward (Add1 stack e2 env) e1 env
 forward stack (Leq e1 e2) env = forward (Leq1 stack e2 env) e1 env
 forward stack (IfThenElse e1 e2 e3) env = forward (IfThenElse1 stack e2 e3 env) e1 env
-forward stack (Var name) env = backward stack =<< note (ScopeError name) (env Map.!? name)
+forward stack (Var name) env = case env Map.!? name of
+  Just v -> backward stack v
+  Nothing -> unwind stack (ScopeError name)
 forward stack (Let name e1 e2) env = forward (Let1 name stack e2 env) e1 env
+forward stack (Catch e1 e2) env = forward (Catch1 stack e2 env) e1 env
 
 -- call "backward" when you have produced a value, consult the stack to see what to do with it
 backward :: Stack -> Val -> Either Error Val
 backward Top v = Right v
 backward (Add1 stack e2 env) v1 = forward (Add2 v1 stack) e2 env
-backward (Add2 v1 stack) v2 = backward stack =<< add v1 v2
+backward (Add2 v1 stack) v2 =
+  case add v1 v2 of
+    Right e -> backward stack e
+    Left err -> unwind stack err
 backward (Leq1 stack e2 env) v1 = forward (Leq2 v1 stack) e2 env
-backward (Leq2 v1 stack) v2 = backward stack =<< leq v1 v2
-backward (IfThenElse1 stack e2 e3 env) v1 = flip (forward stack) env =<< ifThenElse v1 e2 e3
+backward (Leq2 v1 stack) v2 =
+  case leq v1 v2 of
+    Right e -> backward stack e
+    Left err -> unwind stack err
+backward (IfThenElse1 stack e2 e3 env) v1 =
+  case ifThenElse v1 e2 e3 of
+    Right e -> forward stack e env
+    Left err -> unwind stack err
 backward (Let1 name stack e2 env) v1 = forward stack e2 (Map.insert name v1 env)
+backward (Catch1 stack _ _) v = backward stack v
+
+-- like "backward" but for errors
+unwind :: Stack -> Error -> Either Error Val
+unwind Top err = Left err
+unwind (Add1 stack _ _) err = unwind stack err
+unwind (Add2 _ stack) err = unwind stack err
+unwind (Leq1 stack _ _) err = unwind stack err
+unwind (Leq2 _ stack) err = unwind stack err
+unwind (IfThenElse1 stack _ _ _) err = unwind stack err
+unwind (Let1 _ stack _ _) err = unwind stack err
+unwind (Catch1 stack e env) _ = forward stack e env
 
 add :: Val -> Val -> Either Error Val
 add (VInt i1) (VInt i2) = Right (VInt (i1 + i2))
@@ -128,8 +156,15 @@ example2 =
     ( IfThenElse
         (Leq (Add (LInt 4) (LInt 3)) (LInt 4))
         (LInt 1)
-        (Var "x")
+        (Var "z")
     )
 
 -- >>> forward Top example2 Map.empty
--- VInt 3
+-- Left (ScopeError "z")
+
+example3 :: Expr
+example3 =
+  Catch (Catch example2 (LInt 99)) (LInt 0)
+
+-- >>> forward Top example3 Map.empty
+-- Right (VInt 99)
