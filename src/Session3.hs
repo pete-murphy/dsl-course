@@ -29,24 +29,24 @@ data Val
 eval :: Expr -> Map Name Val -> Val
 eval (LInt i) _ = VInt i
 eval (LBool b) _ = VBool b
-eval (Add e1 e2) env = eval e1 env `add` eval e2 env
-eval (Leq e1 e2) env = eval e1 env `leq` eval e2 env
-eval (IfThenElse e1 e2 e3) env = eval (ifThenElse (eval e1 env) e2 e3) env
+eval (Add e1 e2) env = eval e1 env `add'` eval e2 env
+eval (Leq e1 e2) env = eval e1 env `leq'` eval e2 env
+eval (IfThenElse e1 e2 e3) env = eval (ifThenElse' (eval e1 env) e2 e3) env
 eval (Var x) env = env Map.! x
 eval (Let x e1 e2) env = eval e2 (Map.insert x (eval e1 env) env)
 
-add :: Val -> Val -> Val
-add (VInt i1) (VInt i2) = VInt (i1 + i2)
-add _ _ = error "type error"
+add' :: Val -> Val -> Val
+add' (VInt i1) (VInt i2) = VInt (i1 + i2)
+add' _ _ = error "type error"
 
-leq :: Val -> Val -> Val
-leq (VInt i1) (VInt i2) = VBool (i1 <= i2)
-leq _ _ = error "type error"
+leq' :: Val -> Val -> Val
+leq' (VInt i1) (VInt i2) = VBool (i1 <= i2)
+leq' _ _ = error "type error"
 
-ifThenElse :: Val -> a -> a -> a
-ifThenElse (VBool True) x _ = x
-ifThenElse (VBool False) _ x = x
-ifThenElse _ _ _ = error "type error"
+ifThenElse' :: Val -> a -> a -> a
+ifThenElse' (VBool True) x _ = x
+ifThenElse' (VBool False) _ x = x
+ifThenElse' _ _ _ = error "type error"
 
 example :: Expr
 example = Let "x" (Add (LInt 3) (LInt 7)) (IfThenElse (Leq (Var "x") (LInt 11)) (LBool False) (LBool True))
@@ -69,6 +69,10 @@ example = Let "x" (Add (LInt 3) (LInt 7)) (IfThenElse (Leq (Var "x") (LInt 11)) 
 
 type Env = Map Name Val
 
+data Error
+  = ScopeError Name
+  | TypeError
+
 data Stack
   = Top
   | Add1 Stack Expr Env
@@ -79,25 +83,42 @@ data Stack
   | Let1 Name Stack Expr Env
   deriving stock (Show)
 
+note :: forall a. Error -> Maybe a -> Either Error a
+note _ (Just x) = Right x
+note e Nothing = Left e
+
 -- "forward" is for evaluating expressions into values
-forward :: Stack -> Expr -> Env -> Val
+forward :: Stack -> Expr -> Env -> Either Error Val
 forward stack (LInt i) _ = backward stack (VInt i)
 forward stack (LBool b) _ = backward stack (VBool b)
 forward stack (Add e1 e2) env = forward (Add1 stack e2 env) e1 env
 forward stack (Leq e1 e2) env = forward (Leq1 stack e2 env) e1 env
 forward stack (IfThenElse e1 e2 e3) env = forward (IfThenElse1 stack e2 e3 env) e1 env
-forward stack (Var name) env = backward stack (env Map.! name)
+forward stack (Var name) env = backward stack =<< note (ScopeError name) (env Map.!? name)
 forward stack (Let name e1 e2) env = forward (Let1 name stack e2 env) e1 env
 
 -- call "backward" when you have produced a value, consult the stack to see what to do with it
-backward :: Stack -> Val -> Val
-backward Top v = v
+backward :: Stack -> Val -> Either Error Val
+backward Top v = Right v
 backward (Add1 stack e2 env) v1 = forward (Add2 v1 stack) e2 env
-backward (Add2 v1 stack) v2 = backward stack (add v1 v2)
+backward (Add2 v1 stack) v2 = backward stack =<< add v1 v2
 backward (Leq1 stack e2 env) v1 = forward (Leq2 v1 stack) e2 env
-backward (Leq2 v1 stack) v2 = backward stack (leq v1 v2)
-backward (IfThenElse1 stack e2 e3 env) v1 = forward stack (ifThenElse v1 e2 e3) env
+backward (Leq2 v1 stack) v2 = backward stack =<< leq v1 v2
+backward (IfThenElse1 stack e2 e3 env) v1 = flip (forward stack) env =<< ifThenElse v1 e2 e3
 backward (Let1 name stack e2 env) v1 = forward stack e2 (Map.insert name v1 env)
+
+add :: Val -> Val -> Either Error Val
+add (VInt i1) (VInt i2) = Right (VInt (i1 + i2))
+add _ _ = Left TypeError
+
+leq :: Val -> Val -> Either Error Val
+leq (VInt i1) (VInt i2) = Right (VBool (i1 <= i2))
+leq _ _ = Left TypeError
+
+ifThenElse :: Val -> a -> a -> Either Error a
+ifThenElse (VBool True) x _ = Right x
+ifThenElse (VBool False) _ x = Right x
+ifThenElse _ _ _ = Left TypeError
 
 example2 :: Expr
 example2 =
@@ -112,4 +133,3 @@ example2 =
 
 -- >>> forward Top example2 Map.empty
 -- VInt 3
-
