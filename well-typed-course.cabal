@@ -21,6 +21,7 @@ library
        Session1
        Session2
        Session3
+       Session4
     -- other-modules:
     -- other-extensions:
     build-depends:
