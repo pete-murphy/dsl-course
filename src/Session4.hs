@@ -6,6 +6,7 @@ module Session4 where
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as Text
 
 type Name = Text
 
@@ -28,7 +29,7 @@ example =
 -- >>> inlineSmall 0 example
 -- Let "x" (Add (LInt 1) (LInt 1)) (Let "y" (Var "x") (Let "x" (Add (LInt 7) (LInt 7)) (Add (Var "y") (Var "x"))))
 -- >>> inlineSmall 2 example
--- Let "x" (Add (LInt 1) (LInt 1)) (Let "___" (Add (LInt 7) (LInt 7)) (Add (Var "x") (Var "___")))
+-- Let "x" (Add (LInt 1) (LInt 1)) (Let "x0" (Add (LInt 7) (LInt 7)) (Add (Var "x") (Var "x0")))
 
 size :: Expr -> Int
 size (LInt _) = 1
@@ -60,7 +61,7 @@ subst n e (Let n' e1 e2)
   | otherwise = Let n' e1 (subst n e e2)
   where
     e1' = subst n e e1
-    n'' = "___"
+    n'' = freshName n' (free e <> free e2)
 
 -- Get the free variables in an expression
 free :: Expr -> Set Name
@@ -77,3 +78,11 @@ example2 = Let "x" (Var "y") example
 
 -- >>> free example2
 -- fromList ["y"]
+
+freshName :: Name -> Set Name -> Name
+freshName name boundNames =
+  head
+    ( dropWhile
+        (`Set.member` boundNames)
+        [name <> Text.pack (show n) | n <- [0 :: Integer ..]]
+    )
